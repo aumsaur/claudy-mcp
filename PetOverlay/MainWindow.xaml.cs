@@ -14,6 +14,7 @@ public enum PetMode
     Idle,
     FollowingCursor,
     Playing,
+    Catching,
     ReturningHome,
 }
 
@@ -43,10 +44,15 @@ public partial class MainWindow : Window
     private readonly List<(DateTime Time, double X)> _patSamples = new();
     private readonly Random _rng = new();
 
+    private const double TickSeconds = 0.04;
+
     private Forms.NotifyIcon? _trayIcon;
     private Window? _activeBubble;
     private ToyMarker? _toyMarker;
     private Point _toyPos;
+
+    private ToyMarker? _ballMarker;
+    private Vector _ballVelocity;
 
     private PetMode _mode = PetMode.Idle;
     private DateTime _sessionUntil = DateTime.MinValue;
@@ -91,6 +97,7 @@ public partial class MainWindow : Window
             _pipeServer.Stop();
             _trayIcon?.Dispose();
             _toyMarker?.Close();
+            _ballMarker?.Close();
         };
     }
 
@@ -156,6 +163,10 @@ public partial class MainWindow : Window
                     }
                     StepToward(new Point(_toyPos.X - (Width / 2) + 12, _toyPos.Y - (Height / 2) + 12));
                 }
+                break;
+
+            case PetMode.Catching:
+                TickBallPhysics();
                 break;
 
             case PetMode.ReturningHome:
@@ -238,6 +249,7 @@ public partial class MainWindow : Window
 
     private void StartPlay(string label, string emoji)
     {
+        EndBallCatch();
         _mode = PetMode.Playing;
         _sessionUntil = DateTime.UtcNow.AddSeconds(15);
         _nextToyMove = DateTime.UtcNow;
@@ -267,6 +279,90 @@ public partial class MainWindow : Window
     {
         _toyMarker?.Close();
         _toyMarker = null;
+    }
+
+    // ---- throw-and-catch (ball) ----
+
+    private void StartBallCatch()
+    {
+        EndPlay();
+        if (_mode is PetMode.Playing or PetMode.Catching) _mode = PetMode.Idle;
+
+        var ballPos = new Point(Left + (Width / 2) + 50, Top + (Height / 2));
+        var ballSprite = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "toys", "ball.png");
+        _ballMarker?.Close();
+        _ballMarker = new ToyMarker("🎾", ballPos, ballSprite) { IsThrowable = true };
+        _ballMarker.Thrown += OnBallThrown;
+        _ballMarker.Show();
+
+        TryShowCasualBubble("Pull me back like a slingshot, then let go! 🎾", TimeSpan.FromSeconds(4));
+    }
+
+    private void OnBallThrown(Vector displacement)
+    {
+        if (_ballMarker == null) return;
+
+        // Slingshot: pull back, release forward — throw direction is opposite the drag.
+        var velocity = displacement * -4.0;
+        if (velocity.Length > 1800)
+        {
+            velocity *= 1800 / velocity.Length;
+        }
+
+        _ballVelocity = velocity;
+        _mode = PetMode.Catching;
+    }
+
+    private void TickBallPhysics()
+    {
+        if (_ballMarker == null)
+        {
+            _mode = PetMode.Idle;
+            return;
+        }
+
+        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        var pos = _ballMarker.CenterPoint;
+        pos = new Point(pos.X + (_ballVelocity.X * TickSeconds), pos.Y + (_ballVelocity.Y * TickSeconds));
+        _ballVelocity *= 0.94; // friction
+
+        if (pos.X < working.Left + 22 || pos.X > working.Right - 22)
+        {
+            _ballVelocity.X = -_ballVelocity.X * 0.6;
+            pos.X = Math.Clamp(pos.X, working.Left + 22, working.Right - 22);
+        }
+        if (pos.Y < working.Top + 22 || pos.Y > working.Bottom - 22)
+        {
+            _ballVelocity.Y = -_ballVelocity.Y * 0.6;
+            pos.Y = Math.Clamp(pos.Y, working.Top + 22, working.Bottom - 22);
+        }
+
+        _ballMarker.MoveTo(pos);
+        StepToward(new Point(pos.X - (Width / 2), pos.Y - (Height / 2)));
+
+        double dx = (Left + (Width / 2)) - pos.X;
+        double dy = (Top + (Height / 2)) - pos.Y;
+        bool closeEnough = Math.Sqrt((dx * dx) + (dy * dy)) < 55;
+        bool slowEnough = _ballVelocity.Length < 25;
+        if (closeEnough && slowEnough)
+        {
+            CatchBall();
+        }
+    }
+
+    private void CatchBall()
+    {
+        _mode = PetMode.Idle;
+        Bounce();
+        TryShowCasualBubble("Got it! 🎾", TimeSpan.FromSeconds(2));
+        EndBallCatch();
+    }
+
+    private void EndBallCatch()
+    {
+        _ballMarker?.Close();
+        _ballMarker = null;
+        _ballVelocity = new Vector(0, 0);
     }
 
     // ---- mood bubbles / prompt bubbles (shared ownership, prompt always wins) ----
@@ -389,7 +485,7 @@ public partial class MainWindow : Window
         var center = new Point(Left + (Width / 2), Top + (Height / 2));
         var items = new (string Emoji, string Tooltip, Action OnSelect)[]
         {
-            ("🎾", "Ball", () => StartPlay("Ball", "🎾")),
+            ("🎾", "Ball", () => StartBallCatch()),
             ("🧶", "Yarn", () => StartPlay("Yarn", "🧶")),
             ("✨", "Wand", () => StartPlay("Wand", "✨")),
             ("👋", "Call Claudy", () => StartFollowCursor(TimeSpan.FromSeconds(10))),
@@ -415,7 +511,10 @@ public partial class MainWindow : Window
         var playMenu = new Forms.ToolStripMenuItem("Play");
         foreach (var (label, emoji) in Toys)
         {
-            playMenu.DropDownItems.Add($"{emoji} {label}", null, (_, _) => Dispatcher.Invoke(() => StartPlay(label, emoji)));
+            var action = label == "Ball"
+                ? new Action(StartBallCatch)
+                : () => StartPlay(label, emoji);
+            playMenu.DropDownItems.Add($"{emoji} {label}", null, (_, _) => Dispatcher.Invoke(action));
         }
         menu.Items.Add(playMenu);
 

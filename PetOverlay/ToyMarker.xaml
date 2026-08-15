@@ -9,5 +9,16 @@
         ResizeMode="NoResize"
         SizeToContent="WidthAndHeight"
         WindowStartupLocation="Manual">
-    <TextBlock x:Name="EmojiText" FontSize="28"/>
+    <Border x:Name="RootBorder" Width="44" Height="44" CornerRadius="22"
+            Background="#40FFFFFF" BorderBrush="#70FFFFFF" BorderThickness="1">
+        <Grid>
+            <TextBlock x:Name="EmojiText" FontSize="24"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsHitTestVisible="False"/>
+            <Image x:Name="SpriteImage" Width="32" Height="32"
+                   RenderOptions.BitmapScalingMode="NearestNeighbor"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   IsHitTestVisible="False" Visibility="Collapsed"/>
+        </Grid>
+    </Border>
 </Window>

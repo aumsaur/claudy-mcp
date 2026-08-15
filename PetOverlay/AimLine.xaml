@@ -1,0 +1,16 @@
+<Window x:Class="PetOverlay.AimLine"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        IsHitTestVisible="False"
+        WindowStartupLocation="Manual">
+    <Canvas x:Name="RootCanvas">
+        <Line x:Name="AimLineShape" Stroke="#CCFFFFFF" StrokeThickness="3" StrokeDashArray="5,4" StrokeEndLineCap="Round"/>
+        <Ellipse x:Name="PullDot" Width="12" Height="12" Fill="#CCFFFFFF"/>
+    </Canvas>
+</Window>
