@@ -1,0 +1,13 @@
+<Window x:Class="PetOverlay.RadialMenu"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Width="320" Height="320"
+        WindowStartupLocation="Manual">
+    <Canvas x:Name="ItemsCanvas" Width="320" Height="320"/>
+</Window>

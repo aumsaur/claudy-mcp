@@ -1,0 +1,24 @@
+<Window x:Class="PetOverlay.PromptWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Claude asks"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        MaxWidth="360"
+        WindowStartupLocation="Manual">
+    <Border Background="#1E1E22" CornerRadius="14" Padding="16" BorderBrush="#46464E" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.4" Color="Black"/>
+        </Border.Effect>
+        <StackPanel>
+            <TextBlock Text="Claude asks" Foreground="Gray" FontSize="11" Margin="0,0,0,6"/>
+            <TextBlock x:Name="QuestionText" Foreground="White" FontSize="14" TextWrapping="Wrap" Margin="0,0,0,12"/>
+            <StackPanel x:Name="ContentPanel"/>
+        </StackPanel>
+    </Border>
+</Window>
