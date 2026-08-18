@@ -19,7 +19,7 @@ public partial class InfoBubble : Window
         _anchor = anchor;
         _followTarget = followTarget;
         _sideOffset = (Random.Shared.NextDouble() - 0.5) * 50; // small left/right jitter so it doesn't look like a centered tooltip
-        MessageText.Text = text;
+        EmojiIcons.SetRichText(MessageText, text);
 
         MouseLeftButtonDown += (_, _) => Close();
 

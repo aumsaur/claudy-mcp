@@ -7,12 +7,21 @@ import { mkdtemp, writeFile, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROMPT_SCRIPT = path.join(__dirname, "prompt.ps1");
 const PET_EXE = path.join(__dirname, "PetOverlay", "bin", "Release", "net10.0-windows", "PetOverlay.exe");
-const PET_PIPE_PATH = "\\\\.\\pipe\\ClaudeAskUserPet";
 const DEFAULT_TIMEOUT_SECONDS = 300;
+
+// One pipe (and one Claudy) per MCP server process, so concurrent Claude sessions
+// each get their own pet instead of fighting over a single shared one. Generated
+// once at process startup and reused for every ask_user call in this session.
+const SESSION_ID = randomUUID();
+const PIPE_NAME = `ClaudeAskUserPet-${SESSION_ID}`;
+const PET_PIPE_PATH = `\\\\.\\pipe\\${PIPE_NAME}`;
+const DISPLAY_NAME = path.basename(process.cwd()) || "Claudy";
+const SESSION_CWD = process.cwd();
 
 function connectPetPipe(timeoutMs) {
     return new Promise((resolve, reject) => {
@@ -46,7 +55,16 @@ async function connectToPetOrLaunch() {
     }
 
     try {
-        const child = spawn(PET_EXE, [], { detached: true, stdio: "ignore", windowsHide: true });
+        const child = spawn(
+            PET_EXE,
+            [
+                "--pipe-name", PIPE_NAME,
+                "--display-name", DISPLAY_NAME,
+                "--parent-pid", String(process.pid),
+                "--session-cwd", SESSION_CWD,
+            ],
+            { detached: true, stdio: "ignore", windowsHide: true }
+        );
         child.unref();
     } catch (err) {
         throw new Error(`could not launch pet: ${err.message}`);

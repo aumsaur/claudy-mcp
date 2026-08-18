@@ -7,13 +7,13 @@ namespace PetOverlay;
 
 public class PipeServer
 {
-    public const string PipeName = "ClaudeAskUserPet";
-
+    private readonly string _pipeName;
     private readonly Func<PromptRequest, Task<PromptResponse>> _handler;
     private readonly CancellationTokenSource _cts = new();
 
-    public PipeServer(Func<PromptRequest, Task<PromptResponse>> handler)
+    public PipeServer(string pipeName, Func<PromptRequest, Task<PromptResponse>> handler)
     {
+        _pipeName = pipeName;
         _handler = handler;
     }
 
@@ -28,7 +28,7 @@ public class PipeServer
             try
             {
                 using var pipe = new NamedPipeServerStream(
-                    PipeName, PipeDirection.InOut, 1,
+                    _pipeName, PipeDirection.InOut, 1,
                     PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
                 await pipe.WaitForConnectionAsync(token);

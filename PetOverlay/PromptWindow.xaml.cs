@@ -15,6 +15,7 @@ public partial class PromptWindow : Window
     private readonly Func<Point> _followTarget;
     private readonly double _sideOffset;
     private TextBox? _textBox;
+    private bool _freeTextOverrideShown;
 
     public Task<PromptResponse> ResultTask => _tcs.Task;
 
@@ -148,6 +149,43 @@ public partial class PromptWindow : Window
         panel.Children.Add(cancel);
         panel.Children.Add(submit);
         ContentPanel.Children.Add(panel);
+    }
+
+    // Lets the user type a free-form answer even when the question was asked as
+    // yesno/choice (via the radial menu's Prompt item) - an escape hatch over the
+    // buttons already shown, not a replacement for them.
+    public void ShowFreeTextOverride()
+    {
+        if (_textBox != null)
+        {
+            _textBox.Focus();
+            return;
+        }
+        if (_freeTextOverrideShown) return;
+        _freeTextOverrideShown = true;
+
+        ContentPanel.Children.Add(new TextBlock
+        {
+            Text = "Or type your own answer:",
+            Foreground = Brushes.Gray,
+            FontSize = 11,
+            Margin = new Thickness(0, 12, 0, 6),
+        });
+
+        _textBox = new TextBox { Padding = new Thickness(6), Margin = new Thickness(0, 0, 0, 10), MinWidth = 260 };
+        _textBox.KeyDown += (_, e) =>
+        {
+            if (e.Key == Key.Enter) Complete(new PromptResponse { Status = "answered", Answer = _textBox.Text });
+        };
+        ContentPanel.Children.Add(_textBox);
+
+        var panel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var submit = MakeButton("Submit", true);
+        submit.Click += (_, _) => Complete(new PromptResponse { Status = "answered", Answer = _textBox.Text });
+        panel.Children.Add(submit);
+        ContentPanel.Children.Add(panel);
+
+        _textBox.Focus();
     }
 
     private void Complete(PromptResponse response)

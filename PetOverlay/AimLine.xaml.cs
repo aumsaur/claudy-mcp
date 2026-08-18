@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using Forms = System.Windows.Forms;
 
 namespace PetOverlay;
 
@@ -10,13 +9,16 @@ public partial class AimLine : Window
     {
         InitializeComponent();
 
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
-        Left = working.Left;
-        Top = working.Top;
-        Width = working.Width;
-        Height = working.Height;
-        RootCanvas.Width = working.Width;
-        RootCanvas.Height = working.Height;
+        // Spans the whole virtual desktop, not just the primary screen - the
+        // pet (and now the ball, placed by click) can live on a secondary
+        // monitor, and a primary-only canvas would silently clip the whole
+        // trajectory preview away over there.
+        Left = SystemParameters.VirtualScreenLeft;
+        Top = SystemParameters.VirtualScreenTop;
+        Width = SystemParameters.VirtualScreenWidth;
+        Height = SystemParameters.VirtualScreenHeight;
+        RootCanvas.Width = Width;
+        RootCanvas.Height = Height;
     }
 
     public void UpdateLine(Point origin, Point current)

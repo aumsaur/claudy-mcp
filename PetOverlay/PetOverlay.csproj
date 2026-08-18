@@ -8,7 +8,10 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>PetOverlay</AssemblyName>
-    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- WPF's TextBox needs real culture/input-language data for caret handling -
+         invariant mode throws CultureNotFoundException the moment one renders
+         (hit via the ask_user "text" kind and the radial menu's Prompt override). -->
+    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,10 +24,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\claudy\*.png">
+    <!-- Every skin (including the default look) lives under claudy\skins\<name>\,
+         and icons are split by domain (menu\ vs emoji\) - both recursive globs. -->
+    <Content Include="Assets\claudy\skins\**\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="Assets\toys\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Assets\icons\**\*.png">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
