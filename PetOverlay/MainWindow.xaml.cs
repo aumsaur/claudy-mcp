@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Input;
@@ -152,7 +152,10 @@ public partial class MainWindow : Window
 
     private void PositionBottomRight()
     {
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        // SystemParameters.WorkArea, not Forms.Screen.WorkingArea: the latter is in
+        // physical pixels, which on a scaled display lands every window far past the
+        // corner and off-screen. WPF's Left/Top/Width are device-independent units.
+        var working = SystemParameters.WorkArea;
 
         // Fan concurrent instances out diagonally from the corner instead of stacking
         // them on top of each other. Ranked by process start order (not a raw "how many
@@ -420,7 +423,7 @@ public partial class MainWindow : Window
 
         if (pushX == 0 && pushY == 0) return;
 
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        var working = SystemParameters.WorkArea;
         const double maxNudge = 3.0; // px/tick - gentle, doesn't fight normal movement
         Left = Math.Clamp(Left + (pushX * maxNudge), working.Left, working.Right - Width);
         Top = Math.Clamp(Top + (pushY * maxNudge), working.Top, working.Bottom - Height);
@@ -675,10 +678,10 @@ public partial class MainWindow : Window
         _sessionUntil = DateTime.UtcNow.AddSeconds(15);
         _nextToyMove = DateTime.UtcNow;
 
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        var working = SystemParameters.WorkArea;
         _toyPos = new Point(
-            _rng.Next(working.Left + 80, working.Right - 80),
-            _rng.Next(working.Top + 80, working.Bottom - 80));
+            _rng.Next((int)working.Left + 80, (int)working.Right - 80),
+            _rng.Next((int)working.Top + 80, (int)working.Bottom - 80));
 
         _toyMarker?.Close();
         _toyMarker = new ToyMarker(emoji, _toyPos);
@@ -689,10 +692,10 @@ public partial class MainWindow : Window
 
     private void MoveToyRandomly()
     {
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        var working = SystemParameters.WorkArea;
         _toyPos = new Point(
-            _rng.Next(working.Left + 80, working.Right - 80),
-            _rng.Next(working.Top + 80, working.Bottom - 80));
+            _rng.Next((int)working.Left + 80, (int)working.Right - 80),
+            _rng.Next((int)working.Top + 80, (int)working.Bottom - 80));
         _toyMarker?.MoveTo(_toyPos);
     }
 
@@ -775,7 +778,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        var working = SystemParameters.WorkArea;
         var pos = _ballMarker.CenterPoint;
         pos = new Point(pos.X + (_ballVelocity.X * TickSeconds), pos.Y + (_ballVelocity.Y * TickSeconds));
         _ballVelocity *= 0.94; // friction
@@ -1009,10 +1012,13 @@ public partial class MainWindow : Window
         public int Y;
     }
 
-    private static Point GetGlobalCursorPos()
+    private Point GetGlobalCursorPos()
     {
         GetCursorPos(out var p);
-        return new Point(p.X, p.Y);
+        // GetCursorPos is in physical pixels; the caller offsets this by Width/Height
+        // and hands it to StepToward, which sets Left/Top - all device-independent
+        // units. Without the conversion the pet aims past the cursor by the DPI factor.
+        return DpiUtil.PhysicalToDiu(this, new Point(p.X, p.Y));
     }
 
     // ---- explicit window z-order (food needs to sit visually behind the pet) ----

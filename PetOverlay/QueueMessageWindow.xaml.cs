@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
@@ -55,7 +55,7 @@ public partial class QueueMessageWindow : Window
 
     private void PositionAtTarget()
     {
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        var working = SystemParameters.WorkArea;
         var p = _followTarget();
 
         double left = p.X - (ActualWidth / 2) + _sideOffset;

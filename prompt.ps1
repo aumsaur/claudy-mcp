@@ -1,4 +1,4 @@
-param(
+﻿param(
     [Parameter(Mandatory = $true)][string]$RequestPath,
     [Parameter(Mandatory = $true)][string]$ResponsePath
 )
@@ -167,9 +167,20 @@ switch ($kind) {
 $window.Content = $border
 
 $window.Add_ContentRendered({
+        # WorkingArea is in physical pixels but WPF's Left/Top are device-independent
+        # units, so on any display scaled above 100% the raw numbers put the window
+        # past the corner and off-screen entirely. Divide by the DPI scale first.
         $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-        $window.Left = $wa.Right - $window.ActualWidth - 20
-        $window.Top = $wa.Bottom - $window.ActualHeight - 20
+        $scaleX = 1.0
+        $scaleY = 1.0
+        $src = [System.Windows.PresentationSource]::FromVisual($window)
+        if ($src -and $src.CompositionTarget) {
+            $m = $src.CompositionTarget.TransformToDevice
+            if ($m.M11 -gt 0) { $scaleX = $m.M11 }
+            if ($m.M22 -gt 0) { $scaleY = $m.M22 }
+        }
+        $window.Left = ($wa.Right / $scaleX) - $window.ActualWidth - 20
+        $window.Top = ($wa.Bottom / $scaleY) - $window.ActualHeight - 20
     })
 
 $window.Add_KeyDown({

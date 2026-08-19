@@ -54,24 +54,28 @@ async function connectToPetOrLaunch() {
         // not running yet - fall through and try to launch it
     }
 
-    try {
-        const child = spawn(
-            PET_EXE,
-            [
-                "--pipe-name", PIPE_NAME,
-                "--display-name", DISPLAY_NAME,
-                "--parent-pid", String(process.pid),
-                "--session-cwd", SESSION_CWD,
-            ],
-            { detached: true, stdio: "ignore", windowsHide: true }
-        );
-        child.unref();
-    } catch (err) {
-        throw new Error(`could not launch pet: ${err.message}`);
-    }
+    // spawn reports a missing/unlaunchable exe asynchronously via an 'error' event,
+    // not by throwing - and an unhandled one would take the whole MCP server down.
+    // Capture it instead so we can give up early and let the caller fall back.
+    let spawnError = null;
+    const child = spawn(
+        PET_EXE,
+        [
+            "--pipe-name", PIPE_NAME,
+            "--display-name", DISPLAY_NAME,
+            "--parent-pid", String(process.pid),
+            "--session-cwd", SESSION_CWD,
+        ],
+        { detached: true, stdio: "ignore", windowsHide: true }
+    );
+    child.on("error", (err) => {
+        spawnError = err;
+    });
+    child.unref();
 
     for (let i = 0; i < 15; i++) {
         await new Promise((r) => setTimeout(r, 300));
+        if (spawnError) throw new Error(`could not launch pet: ${spawnError.message}`);
         try {
             return await connectPetPipe(800);
         } catch {

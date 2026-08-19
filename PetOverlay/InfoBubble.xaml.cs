@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
@@ -54,7 +54,7 @@ public partial class InfoBubble : Window
 
     private void PositionNearAnchor()
     {
-        var working = Forms.Screen.PrimaryScreen!.WorkingArea;
+        var working = SystemParameters.WorkArea;
 
         double left = _anchor.Left + (_anchor.Width / 2) - (ActualWidth / 2) + _sideOffset;
         if (left < working.Left) left = working.Left + 8;

@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using Forms = System.Windows.Forms;
@@ -10,6 +10,12 @@ public partial class ToyMarker : Window
     private Point _center;
     private Point _dragStart;
     private bool _dragging;
+
+    private Point CursorDiu()
+    {
+        var p = Forms.Cursor.Position;
+        return DpiUtil.PhysicalToDiu(this, new Point(p.X, p.Y));
+    }
     private AimLine? _aimLine;
 
     public bool IsThrowable { get; set; }
@@ -83,9 +89,11 @@ public partial class ToyMarker : Window
         // stuck-and-invisible case (no MouseUp will ever arrive to end it).
         if (!RootBorder.CaptureMouse()) return;
 
-        var p = Forms.Cursor.Position;
+        // Cursor.Position is physical pixels; _dragStart is compared against
+        // CenterPoint and drives throw power, both in device-independent units.
+        var p = CursorDiu();
         _dragging = true;
-        _dragStart = new Point(p.X, p.Y);
+        _dragStart = p;
         ShowAimLine();
     }
 
@@ -121,8 +129,8 @@ public partial class ToyMarker : Window
     {
         if (!IsThrowable) return;
         _dragging = true;
-        var p = Forms.Cursor.Position;
-        _dragStart = new Point(p.X, p.Y);
+        var p = CursorDiu();
+        _dragStart = p;
         RootBorder.CaptureMouse();
 
         // Ball stays put while pulled back; the aim line shows direction/power instead.
@@ -134,8 +142,7 @@ public partial class ToyMarker : Window
     private void OnMouseMove(object sender, MouseEventArgs e)
     {
         if (!_dragging) return;
-        var p = Forms.Cursor.Position;
-        var cursor = new Point(p.X, p.Y);
+        var cursor = CursorDiu();
         var center = CenterPoint;
 
         // Point the line where the ball will actually fly (opposite the pull),
@@ -152,8 +159,7 @@ public partial class ToyMarker : Window
         _aimLine?.Close();
         _aimLine = null;
 
-        var p = Forms.Cursor.Position;
-        var displacement = new Point(p.X, p.Y) - _dragStart;
+        var displacement = CursorDiu() - _dragStart;
 
         // Slingshot-style: how far you pulled it is the throw, independent of
         // how fast you moved the mouse — a small tap-and-release doesn't throw at all.
