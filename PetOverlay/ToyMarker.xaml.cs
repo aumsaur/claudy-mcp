@@ -1,6 +1,8 @@
-﻿using System.Windows;
+﻿using System.Runtime.InteropServices;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using Forms = System.Windows.Forms;
 
 namespace PetOverlay;
@@ -10,6 +12,16 @@ public partial class ToyMarker : Window
     private Point _center;
     private Point _dragStart;
     private bool _dragging;
+
+    // A drag is driven by polling, not by mouse capture. Capture is still asked
+    // for (it makes the events flow the normal way when it is granted) but it is
+    // routinely refused or torn down here - the placement overlay closing right
+    // as the throw begins takes the thread's capture with it - and every failure
+    // mode of a capture-dependent drag looks the same to the user: the gesture
+    // silently does nothing and they have to press again. Polling the physical
+    // cursor and button instead means the pull and the release land wherever the
+    // mouse actually is, whatever has focus or capture at the time.
+    private readonly DispatcherTimer _dragTicker = new() { Interval = TimeSpan.FromMilliseconds(16) };
 
     private Point CursorDiu()
     {
@@ -40,9 +52,13 @@ public partial class ToyMarker : Window
             EmojiText.Visibility = Visibility.Collapsed;
 
             // The sprite is visible enough on its own — the circular backdrop was
-            // only there to make emoji glyphs readable, so drop it here (keep the
-            // brush as Transparent, not null, so the area stays draggable).
-            RootBorder.Background = System.Windows.Media.Brushes.Transparent;
+            // only there to make emoji glyphs readable, so drop it here. The brush
+            // has to stay a real, *nearly* transparent one rather than null or
+            // Brushes.Transparent: on an AllowsTransparency window the OS doesn't
+            // reliably deliver mouse input over fully alpha-0 pixels, which shrank
+            // the grab area to just the 32x32 sprite instead of the whole marker.
+            RootBorder.Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(0x01, 0xFF, 0xFF, 0xFF));
             RootBorder.BorderThickness = new Thickness(0);
         }
         else
@@ -56,8 +72,8 @@ public partial class ToyMarker : Window
         RootBorder.MouseLeftButtonDown += OnMouseDown;
         RootBorder.MouseMove += OnMouseMove;
         RootBorder.MouseLeftButtonUp += OnMouseUp;
-        RootBorder.LostMouseCapture += (_, _) => CancelDrag();
-        Closed += (_, _) => _aimLine?.Close();
+        _dragTicker.Tick += (_, _) => TickDrag();
+        Closed += (_, _) => CancelDrag();
     }
 
     public void MoveTo(Point center)
@@ -84,17 +100,22 @@ public partial class ToyMarker : Window
         UpdateLayout();
         ApplyCenter();
 
-        // Take capture first and bail if it's refused, rather than optimistically
-        // entering the dragging state - a "started" drag with no capture is the
-        // stuck-and-invisible case (no MouseUp will ever arrive to end it).
-        if (!RootBorder.CaptureMouse()) return;
+        // Ask for capture, but carry on without it - the ticker, not capture, is
+        // what keeps the drag alive from here. Bailing on a refused capture made
+        // the whole gesture silently dead, which is the "I place it, drag, nothing
+        // happens, and I have to press a second time" report.
+        RootBorder.CaptureMouse();
+        StartDrag();
+    }
 
+    private void StartDrag()
+    {
         // Cursor.Position is physical pixels; _dragStart is compared against
         // CenterPoint and drives throw power, both in device-independent units.
-        var p = CursorDiu();
+        _dragStart = CursorDiu();
         _dragging = true;
-        _dragStart = p;
         ShowAimLine();
+        _dragTicker.Start();
     }
 
     // Always goes through here so a previous aim line can never be orphaned by
@@ -115,34 +136,25 @@ public partial class ToyMarker : Window
     private void CancelDrag()
     {
         _dragging = false;
+        _dragTicker.Stop();
         _aimLine?.Close();
         _aimLine = null;
     }
 
-    private void ApplyCenter()
-    {
-        Left = _center.X - (ActualWidth / 2);
-        Top = _center.Y - (ActualHeight / 2);
-    }
-
-    private void OnMouseDown(object sender, MouseButtonEventArgs e)
-    {
-        if (!IsThrowable) return;
-        _dragging = true;
-        var p = CursorDiu();
-        _dragStart = p;
-        RootBorder.CaptureMouse();
-
-        // Ball stays put while pulled back; the aim line shows direction/power instead.
-        ShowAimLine();
-
-        e.Handled = true;
-    }
-
-    private void OnMouseMove(object sender, MouseEventArgs e)
+    // The button can come back up anywhere - over another window, over a part of
+    // the screen this little marker does not cover - so the release that ends the
+    // throw is read from the physical button state rather than waited for as a
+    // MouseUp that may never be delivered here.
+    private void TickDrag()
     {
         if (!_dragging) return;
-        var cursor = CursorDiu();
+
+        UpdateAimLine(CursorDiu());
+        if ((GetAsyncKeyState(VkLButton) & 0x8000) == 0) FinishDrag();
+    }
+
+    private void UpdateAimLine(Point cursor)
+    {
         var center = CenterPoint;
 
         // Point the line where the ball will actually fly (opposite the pull),
@@ -151,10 +163,11 @@ public partial class ToyMarker : Window
         _aimLine?.UpdateLine(center, throwPoint);
     }
 
-    private void OnMouseUp(object sender, MouseButtonEventArgs e)
+    private void FinishDrag()
     {
         if (!_dragging) return;
         _dragging = false;
+        _dragTicker.Stop();
         RootBorder.ReleaseMouseCapture();
         _aimLine?.Close();
         _aimLine = null;
@@ -168,4 +181,39 @@ public partial class ToyMarker : Window
             Thrown?.Invoke(displacement);
         }
     }
+
+    private void ApplyCenter()
+    {
+        Left = _center.X - (ActualWidth / 2);
+        Top = _center.Y - (ActualHeight / 2);
+    }
+
+    private void OnMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!IsThrowable) return;
+        RootBorder.CaptureMouse();
+
+        // Ball stays put while pulled back; the aim line shows direction/power instead.
+        StartDrag();
+
+        e.Handled = true;
+    }
+
+    // The ticker already redraws the aim line; this only makes it feel immediate
+    // when capture *is* granted and moves arrive faster than the tick.
+    private void OnMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragging) return;
+        UpdateAimLine(CursorDiu());
+    }
+
+    private void OnMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        FinishDrag();
+    }
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    private const int VkLButton = 0x01;
 }

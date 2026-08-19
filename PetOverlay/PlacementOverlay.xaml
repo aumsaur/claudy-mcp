@@ -10,8 +10,14 @@
         Cursor="Cross"
         WindowStartupLocation="Manual">
     <!-- Background must be a real brush (not null) for the whole canvas to be
-         click-target-able, same reasoning as ToyMarker's RootBorder. -->
-    <Canvas x:Name="RootCanvas" Background="Transparent">
+         click-target-able, same reasoning as ToyMarker's RootBorder - and it
+         must be *nearly* transparent rather than actually transparent. On an
+         AllowsTransparency layered window, fully alpha-0 pixels don't reliably
+         get mouse input from the OS, however hit-testable WPF considers them:
+         that left only the ghost sprite itself receiving moves, which is the
+         "the icon freezes and I have to hover it to get it tracking again"
+         report. #01 alpha is invisible but input-carrying. -->
+    <Canvas x:Name="RootCanvas" Background="#01FFFFFF">
         <Image x:Name="GhostImage" Width="32" Height="32" Opacity="0.65"
                IsHitTestVisible="False"
                RenderOptions.BitmapScalingMode="NearestNeighbor"/>
