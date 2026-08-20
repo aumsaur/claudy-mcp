@@ -57,6 +57,9 @@ public partial class MainWindow : Window
     private DateTime _expressionUntil = DateTime.MinValue;
     private int _talkFrameIndex;
     private DateTime _nextTalkFrameFlip = DateTime.MinValue;
+    private int _walkFrameIndex;
+    private DateTime _nextWalkFrameFlip = DateTime.MinValue;
+    private DateTime _lastStepAt = DateTime.MinValue;
 
     private const double TickSeconds = 0.04;
 
@@ -259,7 +262,34 @@ public partial class MainWindow : Window
             talkFrames.Add(LoadBitmap(path));
         }
 
-        return new SkinDef { Name = name, Dir = dir, Sprites = sprites, MoodSprites = moodSprites, TalkFrames = talkFrames };
+        // Per-direction numbered walk cycle (walk_south_0.png, walk_south_1.png, ...),
+        // generated as one PixelLab template animation per direction so the gait stays
+        // in phase. Same stop-at-first-gap tolerance as the talk frames.
+        Dictionary<string, List<BitmapImage>>? walkFrames = null;
+        foreach (var direction in new[] { "south", "east", "west", "north" })
+        {
+            List<BitmapImage>? cycle = null;
+            for (var i = 0; ; i++)
+            {
+                var path = System.IO.Path.Combine(dir, $"walk_{direction}_{i}.png");
+                if (!System.IO.File.Exists(path)) break;
+                cycle ??= new List<BitmapImage>();
+                cycle.Add(LoadBitmap(path));
+            }
+            if (cycle is null) continue;
+            walkFrames ??= new Dictionary<string, List<BitmapImage>>();
+            walkFrames[direction] = cycle;
+        }
+
+        return new SkinDef
+        {
+            Name = name,
+            Dir = dir,
+            Sprites = sprites,
+            MoodSprites = moodSprites,
+            TalkFrames = talkFrames,
+            WalkFrames = walkFrames,
+        };
     }
 
     private static BitmapImage LoadBitmap(string path)
@@ -576,6 +606,7 @@ public partial class MainWindow : Window
         double step = Math.Min(4.0, dist);
         Left += (dx / dist) * step;
         Top += (dy / dist) * step;
+        _lastStepAt = DateTime.UtcNow;
     }
 
     private void UpdateFacing(double dx, double dy, double dist)
@@ -640,6 +671,28 @@ public partial class MainWindow : Window
                 return;
             }
             _expressionMood = null;
+        }
+
+        // Walk cycle, gated on the pet having actually stepped this instant rather
+        // than on PetMode - it walks in several modes (following, fetching a toy,
+        // approaching a sibling, heading home) and stands still in others. The
+        // ~2-tick grace keeps the cycle running between steps instead of strobing.
+        //
+        // Deliberately NOT falling back to _baseSkin the way mood/talk do: a walk
+        // cycle is tied to the body it was drawn for, so a legless slime's gait on
+        // a four-legged cat would look worse than no gait at all. A skin without
+        // its own walk frames just keeps using its static directional sprite.
+        if (now - _lastStepAt < TimeSpan.FromMilliseconds(120) &&
+            (_currentSkin.WalkFrames?.TryGetValue(_facing, out var walkCycle) ?? false) &&
+            walkCycle.Count > 0)
+        {
+            if (now >= _nextWalkFrameFlip)
+            {
+                _walkFrameIndex = (_walkFrameIndex + 1) % walkCycle.Count;
+                _nextWalkFrameFlip = now.AddMilliseconds(90);
+            }
+            PetImage.Source = walkCycle[_walkFrameIndex];
+            return;
         }
 
         var sprites = _currentSkin.Sprites.ContainsKey(_facing) ? _currentSkin.Sprites : _baseSkin.Sprites;

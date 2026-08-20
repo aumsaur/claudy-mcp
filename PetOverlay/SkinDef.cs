@@ -13,4 +13,5 @@ public class SkinDef
     public required Dictionary<string, BitmapImage> Sprites { get; init; } // south/east/west/north
     public Dictionary<string, BitmapImage>? MoodSprites { get; init; }
     public List<BitmapImage>? TalkFrames { get; init; }
+    public Dictionary<string, List<BitmapImage>>? WalkFrames { get; init; } // per direction, each a full cycle
 }

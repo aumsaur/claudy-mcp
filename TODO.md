@@ -535,3 +535,119 @@ were left in), #2 was a genuine, separately-verified fix:**
    the boundary for a few ticks, which looked like a facing bug on the first
    attempt but wasn't one) shows the pet correctly facing north with no bone
    sprite visible anywhere behind it.
+
+## 9. Manual name-tag rename — DONE 2026-08-20
+
+The badge under the pet was always the session folder's name (`index.js`
+passes `--display-name path.basename(cwd)`); now it can be set by hand.
+`RenameWindow.xaml(.cs)` is a pet-anchored box modelled on
+`QueueMessageWindow` (same follow timer, Enter submits, Escape cancels),
+reached from a new radial-menu item and a "Rename..." tray entry.
+`_displayName` stopped being readonly and `ApplyDisplayName()` is the single
+place that fans a new name out to the nameplate (`Nameplate.SetName()`, which
+re-truncates at 20 chars, updates the full-name tooltip and re-centres for the
+new width), the tray tooltip (`BuildTrayText()`), and - implicitly - the
+registry, since siblings just re-read the next `PetRegistry.Publish()` 250ms
+later. A pending `ask_user` still wins: `ShowPromptAsync` closes the rename
+box, and `TryShowCasualBubble` skips while it's open so a mood bubble can't
+cover what's being typed.
+
+**Persistence:** `PetNames.cs`, a `%APPDATA%\Claudy\names.json` map keyed by
+session cwd - each project keeps its own pet name. Without it a rename would
+be forgotten almost immediately, since every session spawns a fresh pet.
+Submitting an empty box clears the override and restores the folder-derived
+default (`_defaultName`), which is why `ApplyRename` takes the raw trimmed
+string instead of rejecting blanks.
+
+`nametag.png` is a placeholder icon generated locally (not PixelLab) - the
+menu ball falls back to a "?" without *some* sprite there. Overwrite the file
+to replace it; the csproj glob needs no change.
+
+## 10. Walk cycle (cat skin) — DONE 2026-08-20
+
+The pet only ever showed one static sprite per direction. Fine for the slime
+(a legless blob reads as sliding), wrong for the cat, which now animates its
+legs while moving.
+
+`SkinDef.WalkFrames` is `Dictionary<string, List<BitmapImage>>` - a cycle
+**per direction**, loaded from `walk_<dir>_<n>.png` with the same
+stop-at-first-gap tolerance as `talk_`. `ApplySprite()` gained a tier between
+mood and the static sprite.
+
+Two decisions worth keeping:
+
+1. **Gated on real movement, not `PetMode`** - the pet walks in several modes
+   (following, fetching, approaching a sibling, going home) and stands still
+   in others. `StepToward()` stamps `_lastStepAt` whenever it actually moves;
+   the walk tier requires that to be within 120ms (~2 ticks, so the cycle
+   doesn't strobe between steps). `ApplySeparation()`'s drift deliberately
+   does *not* stamp it - it nudges without updating `_facing`, so a cycle
+   there would play in the wrong direction.
+2. **No `_baseSkin` fallback, unlike mood/talk** - a walk cycle is tied to the
+   body it was drawn for, so the slime's gait on a four-legged cat would look
+   worse than none. A skin with no walk frames keeps using its own static
+   directional sprite. This is what makes a partial set (see north below) a
+   safe state rather than a broken one.
+
+### PixelLab notes (the generation half)
+
+Connected as an MCP server at user scope: `claude mcp add --transport http
+pixellab https://api.pixellab.ai/mcp --header "Authorization: Bearer <token>"`.
+Note the **public REST API at `/v1` is a different, older surface** -
+`/generate-image-pixflux`, `/rotate`, `/animate-with-text`, `/balance` - with
+no character/animation-group concepts at all. Everything used here
+(`animate_character`, `get_character`, `list_characters`, `delete_animation`)
+is MCP-only. `GET /v1/balance` is still the quickest way to check a token.
+`list_characters` recovers a character_id when the scratchpad holding it is
+gone - the cat is `980c70ab-50b5-4027-a2fd-58bf650af56f`.
+
+south/east/west came from one call: `template_animation_id: "walk-8-frames"`,
+`directions: [...]`, 1 generation per direction, frames returned at exactly
+the character's 64x64 with no padding. **Template mode is the quadruped
+skeleton path** - the character was created with `template_id: "cat"`, so its
+`available_animations` are real quadruped gaits (walk-4/6/8-frames,
+running-*, sitting, ...). v3 and pro are free-form and do *not* use the
+skeleton, which is exactly why their motion drifts off-gait.
+
+**North took four attempts and is worth remembering:**
+
+- template roll 1 → correct gait, palette drifted to ginger.
+- template roll 2 (after `delete_animation(..., direction: "north")`, which
+  deletes a single direction and leaves the rest of the group intact) →
+  correct gait, palette drifted again, this time tan. Re-running *without*
+  deleting first is a no-op: it answers "already complete" and returns the
+  cached direction.
+- v3 (`mode: "v3"`, `keep_first_frame: false`) → palette correct (it starts
+  from the character's own rotation image) but the motion read as jumping.
+  Also came back **80x80**, padded around the 64x64 character. Don't assume
+  the padding is centred: aligning the alpha bounding boxes against the
+  static sprite gave a crop origin of (8,6), not (8,8).
+- pro (`mode: "pro"`, 20 generations, requires calling once without
+  `confirm_cost` and confirming with the user) → correct palette *and* a
+  walk, because pro references the already-completed sides. Returns 16 frames
+  fixed by canvas size (`frame_count` ignored at ≤64px); took every other one
+  for an 8-frame cycle matching the other directions.
+
+A luminance-rank palette remap of the tan template frames was tried as a free
+alternative and produced garbage (solid blue) - not pursued once pro landed.
+
+**Drop shadows:** the template walk put an opaque grey ellipse under the
+airborne frame (`walk_south_5`) and nowhere else, which reads as a flicker
+against a shadowless set. Removed by connected-component flood fill from a
+seed under the paws - **colour alone is not enough**, the shadow's dominant
+grey (136,123,120) also appears on the cat's body; only connectivity
+separates them. All 38 cat sprites were then swept on a light background to
+confirm the set is shadow-free.
+
+### Verification note - superseding the "synthetic input doesn't work" note above
+
+Simulated mouse input **does** work in this environment now, given
+`SetProcessDPIAware()` in the driving process and `mouse_event` down/up with
+~60ms between. The full rename flow and the Clothing→cat skin switch were
+both driven end to end, and the cat was captured mid-walk cycling frames.
+Caveats that cost real time: the pet spawns bottom-right, so the ring's
+bottom item lands on the taskbar and the click goes to the tray - drag the
+pet to mid-screen first; and both drag and right-click intermittently no-op,
+so check state between steps (window count: 2 = idle, 3 = ring open) and
+retry rather than clicking blind. The pet windows have no `MainWindowHandle`
+(`ShowInTaskbar=False`), so enumerate top-level windows by pid instead.
