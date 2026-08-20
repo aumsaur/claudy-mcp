@@ -75,7 +75,9 @@ public partial class MainWindow : Window
 
     private PlacementOverlay? _placementOverlay;
 
-    private readonly string _displayName;
+    private string _displayName;
+    private readonly string _defaultName;
+    private RenameWindow? _renameWindow;
     private readonly int _parentPid;
     private readonly string _sessionCwd;
     private DateTime _nextParentCheck = DateTime.MinValue;
@@ -107,7 +109,10 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        _displayName = displayName;
+        _defaultName = displayName;
+        // Before CreateTrayIcon/the nameplate read it: a name the user set by hand in
+        // an earlier session for this same folder wins over the folder-derived default.
+        _displayName = PetNames.Load(sessionCwd) ?? displayName;
         _parentPid = parentPid;
         _sessionCwd = sessionCwd;
 
@@ -143,6 +148,7 @@ public partial class MainWindow : Window
             _ballMarker?.Close();
             _foodMarker?.Close();
             _placementOverlay?.Close();
+            _renameWindow?.Close();
             _nameplate?.Close();
             PetRegistry.Unpublish();
         };
@@ -918,6 +924,7 @@ public partial class MainWindow : Window
     private void TryShowCasualBubble(string text, TimeSpan duration, string? mood = null)
     {
         if (_activeBubble is PromptWindow) return;
+        if (_renameWindow != null) return; // don't cover the box being typed in
         if (_activeBubble is InfoBubble existing) existing.Close();
 
         if (mood != null) SetExpression(mood, duration + TimeSpan.FromMilliseconds(300));
@@ -939,6 +946,7 @@ public partial class MainWindow : Window
         await Dispatcher.InvokeAsync(() =>
         {
             _activeBubble?.Close();
+            _renameWindow?.Close();
             Bounce();
 
             prompt = new PromptWindow(request, GetPetAnchorPoint);
@@ -1085,6 +1093,12 @@ public partial class MainWindow : Window
             },
             new()
             {
+                SpritePath = System.IO.Path.Combine(menuIconsDir, "nametag.png"),
+                Tooltip = "Rename",
+                OnSelect = ShowRenameDialog,
+            },
+            new()
+            {
                 SpritePath = System.IO.Path.Combine(menuIconsDir, "close.png"),
                 Tooltip = "Close",
                 OnSelect = () => System.Windows.Application.Current.Shutdown(),
@@ -1110,6 +1124,55 @@ public partial class MainWindow : Window
             });
         }
         return items;
+    }
+
+    // ---- name tag ----
+
+    private void ShowRenameDialog()
+    {
+        if (_renameWindow != null)
+        {
+            _renameWindow.Activate();
+            return;
+        }
+
+        var window = new RenameWindow(_displayName, _defaultName, GetPetAnchorPoint, ApplyRename);
+        window.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_renameWindow, window)) _renameWindow = null;
+        };
+        _renameWindow = window;
+        window.Show();
+        window.Activate();
+    }
+
+    // An empty box means "drop my custom name", so the override is removed and the
+    // folder-derived default comes back rather than the badge going blank.
+    private void ApplyRename(string typed)
+    {
+        var name = string.IsNullOrWhiteSpace(typed) ? _defaultName : typed;
+        if (string.Equals(name, _displayName, StringComparison.Ordinal)) return;
+
+        if (string.IsNullOrWhiteSpace(typed)) PetNames.Clear(_sessionCwd);
+        else PetNames.Save(_sessionCwd, name);
+
+        ApplyDisplayName(name);
+        TryShowCasualBubble($"I'm {name} now! ✨", TimeSpan.FromSeconds(3), "happy");
+    }
+
+    // Everything the name feeds except the registry, which siblings re-read from the
+    // next publish (250ms away) on its own.
+    private void ApplyDisplayName(string name)
+    {
+        _displayName = name;
+        _nameplate?.SetName(name);
+        if (_trayIcon != null) _trayIcon.Text = BuildTrayText();
+    }
+
+    private string BuildTrayText()
+    {
+        var text = $"Claudy — {_displayName}";
+        return text.Length > 63 ? text[..63] : text;
     }
 
     private void SelectSkin(string name)
@@ -1257,14 +1320,11 @@ public partial class MainWindow : Window
 
     private void CreateTrayIcon()
     {
-        var trayText = $"Claudy — {_displayName}";
-        if (trayText.Length > 63) trayText = trayText[..63];
-
         _trayIcon = new Forms.NotifyIcon
         {
             Icon = BuildIcon(),
             Visible = true,
-            Text = trayText,
+            Text = BuildTrayText(),
         };
 
         var menu = new Forms.ContextMenuStrip();
@@ -1281,6 +1341,7 @@ public partial class MainWindow : Window
         menu.Items.Add(playMenu);
 
         menu.Items.Add("Call Claudy", null, (_, _) => Dispatcher.Invoke(() => StartFollowCursor(TimeSpan.FromSeconds(10))));
+        menu.Items.Add("Rename...", null, (_, _) => Dispatcher.Invoke(new Action(ShowRenameDialog)));
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Exit", null, (_, _) => System.Windows.Application.Current.Shutdown());
 

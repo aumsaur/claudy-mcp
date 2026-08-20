@@ -12,8 +12,7 @@ public partial class Nameplate : Window
     {
         InitializeComponent();
 
-        NameText.Text = fullName.Length > MaxChars ? fullName[..(MaxChars - 1)] + "…" : fullName;
-        RootBorder.ToolTip = fullName;
+        SetName(fullName);
 
         _center = initialCenter;
         // A SizeToContent + AllowsTransparency window that's first shown with Left/Top
@@ -23,6 +22,22 @@ public partial class Nameplate : Window
         // position up front (even before ActualWidth is known) avoids that path.
         ApplyCenter();
         ContentRendered += (_, _) => ApplyCenter();
+    }
+
+    public void SetName(string fullName)
+    {
+        NameText.Text = fullName.Length > MaxChars ? fullName[..(MaxChars - 1)] + "…" : fullName;
+        RootBorder.ToolTip = fullName;
+
+        // A longer/shorter name changes the badge's width, so the old Left is no
+        // longer centred. ActualWidth only catches up after a layout pass, hence
+        // the explicit UpdateLayout - the per-tick MoveTo would fix it a frame
+        // later anyway, but not before the badge visibly jumps.
+        if (IsLoaded)
+        {
+            UpdateLayout();
+            ApplyCenter();
+        }
     }
 
     public void MoveTo(Point center)
