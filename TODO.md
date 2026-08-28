@@ -651,3 +651,62 @@ pet to mid-screen first; and both drag and right-click intermittently no-op,
 so check state between steps (window count: 2 = idle, 3 = ring open) and
 retry rather than clicking blind. The pet windows have no `MainWindowHandle`
 (`ShowInTaskbar=False`), so enumerate top-level windows by pid instead.
+
+## 11. Pulse HUD radial item — DONE 2026-08-27
+
+A "Pulse" ball on the root ring opens a small panel over the same numbers
+claude-pulse puts in the Claude Code status line - session window, weekly
+window, context, model/effort/cost/plan - for when the terminal isn't the
+window you're looking at.
+
+`PulseReader.cs` reads claude-pulse's own state files directly out of
+`%LOCALAPPDATA%\claude-status\`: `stdin_ctx.json` (model, context, cost,
+effort, `_rate_limits`) and `cache.json` (plan, and rate limits when the
+stdin path didn't fire). It deliberately does **not** shell out to
+`claude_status.py` - that script is fed its numbers on stdin by Claude Code,
+which the pet can't reproduce, and it emits ANSI-escaped bars rather than
+data.
+
+Two things the file layout forces:
+
+- **Staleness.** Those files only change when the status line repaints, and
+  the pet is what you look at while the terminal is *not* in front of you -
+  so a frozen payload is the normal case, not the edge case. There is no
+  timestamp in the JSON; the panel uses the file's mtime, appends "Nm ago"
+  and dims past two minutes. The reset countdowns are computed locally from
+  `resets_at` on the panel's own 2s tick, so those stay live regardless.
+- **Not per-session.** The files are global, last-writer-wins. Session and
+  weekly are account-wide so they're always right; cost and context belong to
+  whichever session repainted last. `sessions/<pid>.json` is per-session but
+  only carries `session_pct`/`weekly_pct`/`model` - not the two fields that
+  actually differ - so walking `--parent-pid` up to the claude process to
+  find it isn't worth the P/Invoke.
+
+`PulseHud` is `ShowActivated="False"` (a HUD that pulls focus off the
+terminal every time it opens defeats the point), which means Escape can't be
+relied on - it only lands if something else happened to hand the panel focus.
+Dismissal is therefore an X in the header, click-anywhere on the panel (same
+gesture, undiscoverable on its own), or picking Pulse again as a toggle. The X
+does *not* dim with staleness - it's a control, not a reading.
+Rows are built once and mutated per tick so a refresh can't reflow the panel
+out from under the pointer. `pulse.png` is PixelLab (`create_image_pixflux`,
+32x32, `no_background`) like the other menu icons.
+
+A second trap the X verification turned up: the panel is `SizeToContent` with
+a `DropShadowEffect`, so the window rect extends past the visible border by the
+shadow's bleed. That margin is visible enough for `WindowFromPoint` to return
+the panel's hwnd, but it is transparent to WPF - clicks there raise no mouse
+events at all. A synthetic click computed as "right edge minus the padding"
+lands in it and silently does nothing; measure the target off a screenshot
+instead.
+
+### Verification note - DPI, again
+
+The note under #10 says simulated input works "given `SetProcessDPIAware()`
+in the driving process". Treat that as load-bearing, not a footnote: without
+it `GetWindowRect` hands back virtualized coordinates while `CopyFromScreen`
+uses physical ones, so a click computed from a window rect lands somewhere
+else entirely - in this case a right-click meant for the pet opened a context
+menu in a browser window behind it. Verify the target under the cursor with
+`WindowFromPoint` before pressing a synthetic button, or skip the mouse and
+capture the window rect only.

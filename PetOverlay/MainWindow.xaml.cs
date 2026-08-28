@@ -18,6 +18,7 @@ public enum PetMode
     Eating,
     ReturningHome,
     Socializing,
+    Wandering,
 }
 
 public partial class MainWindow : Window
@@ -81,6 +82,7 @@ public partial class MainWindow : Window
     private string _displayName;
     private readonly string _defaultName;
     private RenameWindow? _renameWindow;
+    private PulseHud? _pulseHud;
     private readonly int _parentPid;
     private readonly string _sessionCwd;
     private DateTime _nextParentCheck = DateTime.MinValue;
@@ -105,6 +107,7 @@ public partial class MainWindow : Window
     private DateTime _lastPatTrigger = DateTime.MinValue;
 
     private Point _restPosition;
+    private Point _wanderTarget;
     private string _facing = "south";
     private double _phase;
 
@@ -126,7 +129,7 @@ public partial class MainWindow : Window
             LoadSprites();
             _nameplate = new Nameplate(_displayName, GetNameplateAnchorPoint());
             _nameplate.Show();
-            _nextWanderCheck = DateTime.UtcNow.AddSeconds(_rng.Next(20, 40));
+            _nextWanderCheck = DateTime.UtcNow.AddSeconds(_rng.Next(8, 16));
             _nextMoodCheck = DateTime.UtcNow.AddSeconds(_rng.Next(30, 60));
         };
 
@@ -152,6 +155,7 @@ public partial class MainWindow : Window
             _foodMarker?.Close();
             _placementOverlay?.Close();
             _renameWindow?.Close();
+            _pulseHud?.Close();
             _nameplate?.Close();
             PetRegistry.Unpublish();
         };
@@ -369,6 +373,10 @@ public partial class MainWindow : Window
 
             case PetMode.Socializing:
                 TickSocial();
+                break;
+
+            case PetMode.Wandering:
+                StepToward(_wanderTarget, arrivalMode: PetMode.Idle);
                 break;
 
             case PetMode.Idle:
@@ -720,14 +728,49 @@ public partial class MainWindow : Window
         _sessionUntil = DateTime.UtcNow.Add(duration);
     }
 
+    // "Wandering" used to mean a coin flip every 25-50s that briefly followed the
+    // cursor - which moved the pet zero pixels whenever the cursor happened to be
+    // parked near it, so a pet left alone read as frozen rather than idle. It now
+    // strolls to a spot of its own choosing, and only sometimes comes to visit the
+    // cursor instead.
     private void MaybeSpontaneousWander()
     {
         if (DateTime.UtcNow < _nextWanderCheck) return;
-        _nextWanderCheck = DateTime.UtcNow.AddSeconds(_rng.Next(25, 50));
-        if (_rng.NextDouble() < 0.5)
+        _nextWanderCheck = DateTime.UtcNow.AddSeconds(_rng.Next(12, 26));
+
+        var roll = _rng.NextDouble();
+        if (roll < 0.25)
         {
             StartFollowCursor(TimeSpan.FromSeconds(_rng.Next(4, 8)));
         }
+        else if (roll < 0.85)
+        {
+            StartWander();
+        }
+        // the remaining ~15% is a deliberate pause - a pet that moves on every
+        // single check reads as restless rather than alive.
+    }
+
+    // Somewhere within a short stroll of where it already stands, kept fully
+    // on-screen. A random point anywhere in the work area would read as a sprint
+    // across the desktop instead of a pet mooching around its own corner.
+    private void StartWander()
+    {
+        var working = SystemParameters.WorkArea;
+        var angle = _rng.NextDouble() * Math.PI * 2;
+        var distance = 90 + (_rng.NextDouble() * 190);
+
+        var target = new Point(
+            Math.Clamp(Left + (Math.Cos(angle) * distance), working.Left, working.Right - Width),
+            Math.Clamp(Top + (Math.Sin(angle) * distance), working.Top, working.Bottom - Height));
+
+        // Clamping can pin the target straight back onto the pet - it's already in
+        // a corner and rolled a heading that leaves the screen. Skip rather than
+        // spend the whole interval walking nowhere.
+        if (Math.Abs(target.X - Left) + Math.Abs(target.Y - Top) < 20) return;
+
+        _wanderTarget = target;
+        _mode = PetMode.Wandering;
     }
 
     private void StartPlay(string label, string emoji)
@@ -978,6 +1021,7 @@ public partial class MainWindow : Window
     {
         if (_activeBubble is PromptWindow) return;
         if (_renameWindow != null) return; // don't cover the box being typed in
+        if (_pulseHud != null) return; // same for the pulse panel - it sits where bubbles do
         if (_activeBubble is InfoBubble existing) existing.Close();
 
         if (mood != null) SetExpression(mood, duration + TimeSpan.FromMilliseconds(300));
@@ -1000,6 +1044,7 @@ public partial class MainWindow : Window
         {
             _activeBubble?.Close();
             _renameWindow?.Close();
+            _pulseHud?.Close();
             Bounce();
 
             prompt = new PromptWindow(request, GetPetAnchorPoint);
@@ -1146,6 +1191,12 @@ public partial class MainWindow : Window
             },
             new()
             {
+                SpritePath = System.IO.Path.Combine(menuIconsDir, "pulse.png"),
+                Tooltip = "Pulse",
+                OnSelect = TogglePulseHud,
+            },
+            new()
+            {
                 SpritePath = System.IO.Path.Combine(menuIconsDir, "nametag.png"),
                 Tooltip = "Rename",
                 OnSelect = ShowRenameDialog,
@@ -1177,6 +1228,28 @@ public partial class MainWindow : Window
             });
         }
         return items;
+    }
+
+    // ---- pulse HUD ----
+
+    // Unlike the rename dialog this is a toggle rather than a re-activate: the panel
+    // takes no focus by design, so "pick it again" is the natural way to dismiss it
+    // for anyone who doesn't discover click-to-close.
+    private void TogglePulseHud()
+    {
+        if (_pulseHud != null)
+        {
+            _pulseHud.Close();
+            return;
+        }
+
+        var hud = new PulseHud(GetPetAnchorPoint);
+        hud.Closed += (_, _) =>
+        {
+            if (ReferenceEquals(_pulseHud, hud)) _pulseHud = null;
+        };
+        _pulseHud = hud;
+        hud.Show();
     }
 
     // ---- name tag ----
