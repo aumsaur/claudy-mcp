@@ -710,3 +710,65 @@ else entirely - in this case a right-click meant for the pet opened a context
 menu in a browser window behind it. Verify the target under the cursor with
 `WindowFromPoint` before pressing a synthetic button, or skip the mouse and
 capture the window rect only.
+
+## 13. Lamp crewmate skin — DONE 2026-10-11
+
+Third skin, `Assets/claudy/skins/lamp/` (menu tooltip "lamp"): an Among Us
+crewmate (red, plain visor, backpack) wearing a Pixar Luxo-style dome lamp
+shade as a hat; the side/back views show the lamp arm running from the shade
+to the backpack. Assets only - no code changes, `LoadSprites()` picks the
+folder up like `cat/`. Full set: 4 directions, `mood_happy`/`mood_scared`,
+`talk_0..13`, `walk_<dir>_0..7` for all four directions.
+
+PixelLab character `1fcea31d-5006-4ab3-a795-94a70a5e2141` (8 directions,
+`mannequin`, `low top-down`). 43 generations total including rejected rolls
+(balance 1996 → 1953).
+
+- **Done over the v2 REST API, not the PixelLab MCP** - that MCP is only
+  configured for the `office-escape` project. Same endpoints the earlier notes
+  name, at `https://api.pixellab.ai/v2/...`; `/v2/openapi.json` has the full
+  spec. Two gotchas: the backblaze CDN 403s Python's default urllib
+  User-Agent, and Git Bash rewrites a leading-slash argument like
+  `/create-character-v3` into a filesystem path.
+- **Base**: `/create-character-v3` from scratch (2 generations a roll).
+  `view: "side"` turned the crewmate into a humanoid astronaut with arms;
+  `low top-down` plus "bean-shaped body with no arms" in the prompt is what
+  read as a crewmate.
+- **Walk**: east/west are a Pixar-lamp hop, `/animate-character`
+  `mode: "v3"` (84x84 canvas, frame 0 is the unmoved reference even with
+  `keep_first_frame: false`, crop origin (10,10), frames 1-8 kept). The hop
+  was first used for south/north too, but from the front both legs lifting
+  together reads as jumping (user feedback), so those two were redone as an
+  alternating step:
+  - v3 with an "only one foot off the ground at a time" prompt gets the gait
+    about half the time, but redraws the shade as it goes, so the loop snaps.
+  - **Fix: pass the static sprite as `end_frame`** (interpolation mode). The
+    cycle has to land back on the standing pose, which holds the shade still
+    and closes the loop. Canvas is 64x84 here, crop origin (0,10).
+  - Seeds still vary: half the rolls hopped anyway. Picked by measuring the
+    lowest opaque row in the left vs right half of each frame - an
+    alternating gait has the two halves out of phase, a hop has them equal.
+    Kept south seed 904, north seed 902.
+  - `mode: "skeleton-v3"` with `walking-8-frames` (3 generations a
+    direction) came back nearly static - the crewmate's legs are too short
+    for the posed skeleton to move anything visible.
+  - The `walking-8-frames` template rendered the character ~7% smaller than
+    its static sprite, so it visibly shrank on every step.
+- **Talk** drifts: the shade straightens over the 8 frames and never comes
+  back, so the files are a ping-pong (0..7..1, 14 frames) - the drift reads
+  as a nod instead of a snap at the loop point.
+- **No face, ever** (user rule: crewmates don't emote with eyes or a mouth -
+  only the impostor has a mouth, when eating). Moods are carried by the lamp
+  and effects: happy = bright bulb + hearts + sparkles, scared = crooked
+  shade, dim bulb, sweat drops, shake lines. `/edit-image-pixen` (1
+  generation) kept adding a face whenever the prompt mentioned emotions *or*
+  said "no eyes/no mouth"; an effects-only prompt ("add sparkles, make the
+  bulb brighter, change nothing else") worked for happy. Scared still put
+  marks on the visor, so the original south sprite's visor (flood-filled
+  bluish component + 1px ring) was pasted back over it.
+
+Verified live with a temporary env-gated hook (forced skin, both moods, a
+west/north/east/south walk), screenshots captured, hook reverted and rebuilt.
+The faceless mood PNGs and the alternating south/north walk frames replaced
+the earlier versions *after* that check - same file names, same code path,
+but those images were only inspected as sprites, not seen live.
