@@ -772,3 +772,29 @@ west/north/east/south walk), screenshots captured, hook reverted and rebuilt.
 The faceless mood PNGs and the alternating south/north walk frames replaced
 the earlier versions *after* that check - same file names, same code path,
 but those images were only inspected as sprites, not seen live.
+
+## 14. Ducky and Bolt skins (pxl) — DONE 2026-11-02
+
+Fourth and fifth skins, `skins/ducky/` (a rubber debugging duck) and
+`skins/bolt/` (a two-wheeled robot with a screen face). Assets only, no code
+changes. Each has the full set: 4 directions, `mood_happy`/`mood_scared`, a
+talk loop (`talk_0..3` beak, `talk_0..5` equalizer mouth) and 6-frame walks
+in all four directions (duck waddle; robot wheels turning, treads scrolling
+front/back).
+
+- **Drawn as code with pxl, not PixelLab**: the `pxl-pixel-art` skill (a
+  junction in `.claude/skills/`, hidden in `.git/info/exclude`) renders
+  `art/ducky.px.js` and `art/bolt.px.js` locally. No credits, nothing sent
+  out. Edit the `.px.js` and rebuild instead of touching PNGs; the build and
+  install steps are in each file's header. Flatter shading than the
+  PixelLab skins, by nature of hand-written art.
+- **Sprite contract the files follow**: 62x62 canvas + `outline` = 64x64,
+  feet on row 60 like `lamp/`. Front/back are `mx` parts so faces stay
+  symmetric, with gloss/hearts/sweat added after the mirror. pxl writes
+  palette PNGs (not RGBA like the PixelLab ones); WPF renders them fine.
+- **Verified live** with the same temporary env-gated hook as #13 (forced
+  skin, both moods, all four walks), built with `-o` into a scratch folder so
+  the running pet's file lock didn't matter, hook reverted and the binary
+  checked clean. Talk frames were only inspected as sprites. Gotcha: test
+  pets socialize with any running pet, and the reaction mood outranks a
+  forced mood or walk, so a capture can show the wrong state - rerun it.
